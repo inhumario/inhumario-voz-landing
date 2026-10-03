@@ -1,6 +1,7 @@
 const express = require("express");
 const path = require("path");
 const nodemailer = require("nodemailer");
+const compression = require("compression");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -13,7 +14,7 @@ const SMTP_PORT = parseInt(process.env.SMTP_PORT || "587", 10);
 const SMTP_USER = process.env.SMTP_USER;
 const SMTP_PASS = process.env.SMTP_PASS;
 const TO_EMAIL = process.env.TO_EMAIL || "cuadrado.mario@aromasdete.com";
-const FROM_LABEL = process.env.FROM_LABEL || "Inhumario · app.inhumario.com";
+const FROM_LABEL = process.env.FROM_LABEL || "Inhumario · voz.inhumario.com";
 
 if (!SMTP_USER || !SMTP_PASS) {
   console.warn("[WARN] SMTP_USER / SMTP_PASS no configurados. El formulario no enviará emails.");
@@ -56,6 +57,19 @@ setInterval(() => {
 // Middlewares
 // ============================================================
 app.set("trust proxy", true);
+app.use(compression());
+
+// SEO: robots y sitemap propios (antes devolvían la home) y sin barras finales duplicadas
+const SITE = process.env.SITE_URL || "https://voz.inhumario.com";
+app.get("/robots.txt", (req, res) => {
+  res.type("text/plain").send(`User-agent: *\nAllow: /\n\nSitemap: ${SITE}/sitemap.xml\n`);
+});
+app.get("/sitemap.xml", (req, res) => {
+  res.type("application/xml").send(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>${SITE}/</loc><changefreq>monthly</changefreq><priority>1.0</priority></url>
+</urlset>\n`);
+});
 app.use(express.json({ limit: "20kb" }));
 app.use(express.urlencoded({ extended: false, limit: "20kb" }));
 
@@ -183,9 +197,11 @@ app.post("/api/contact", async (req, res) => {
 
 app.get("/api/health", (req, res) => res.json({ ok: true, version: "1.0" }));
 
-// Fallback SPA: cualquier ruta no encontrada → index.html
+// La landing es una sola página: cualquier otra ruta vuelve a ella con 301
+// (antes se servía la home con 200 en cualquier URL → contenido duplicado).
 app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
+  if (/\.[a-z0-9]{2,5}$/i.test(req.path)) return res.status(404).type("txt").send("404 — no encontrado");
+  res.redirect(301, "/");
 });
 
 app.listen(PORT, () => {
